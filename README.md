@@ -3,6 +3,8 @@
 > **고민할 시간에 움직인다.**
 > 망설이는 사람들 사이에서 가장 먼저 발을 떼고 전진하는 선구자 크루.
 
+![FOMO Banner](./banner.png)
+
 ![PseudoLab](https://img.shields.io/badge/PseudoLab-S12-3776AB)
 ![Discord Community](https://img.shields.io/badge/Discord-BF40BF)
 ![Stars Badge](https://img.shields.io/github/stars/Pseudo-Lab/FOMO)
