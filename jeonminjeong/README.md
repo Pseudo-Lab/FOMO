@@ -1,4 +1,4 @@
-# minjeong jeon - FOMO Crew KMS
+# jeon minjeong - FOMO Crew KMS
 
 > **"코드 한 줄보다 고민 한 줄을 깃허브에 남기는 습관"**
 
