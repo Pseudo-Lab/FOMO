@@ -5,7 +5,7 @@
 ## 폴더 구조
 
 ```
-kyuminlee/
+leekyumin/
 ├── README.md          # 개인 KMS 소개
 ├── weekly/
 │   └── week1.md       # 주차별 기록
