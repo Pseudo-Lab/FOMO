@@ -5,7 +5,7 @@
 ## 폴더 구조
 
 ```
-kangdonggyu/
+kangdongkyu/
 ├── README.md          # 개인 KMS 소개
 ├── weekly/
 │   └── week1.md       # 주차별 기록
@@ -15,5 +15,5 @@ kangdonggyu/
 ## Weekly Archive
 
 | 주차 | 주제 | 핵심 인사이트 | 링크 |
-|:---:|:---:|:---:|:---:|
-| W1 | - | - | - |
+| :--: | :--: | :-----------: | :--: |
+|  W1  |  -   |       -       |  -   |
