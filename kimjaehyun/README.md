@@ -6,15 +6,17 @@
 
 ```
 kimjaehyun/
-├── README.md          # 개인 KMS 소개 및 누적 성장 통계
+├── README.md                    # 개인 KMS 소개 및 누적 성장 통계
 ├── weekly/
-│   └── week1.md       # 주차별 기록
+│   └── week1.md                 # 주차별 기록
 └── code/
-    └── agent_core_v0.1.py  # 실습 코드
+    ├── agent_core_v0.1.py       # Claude API 에이전트 체이닝
+    ├── ralph_loop_hook.sh       # Ralph Loop Stop Hook
+    └── subagent_tracker.sh      # SubagentStart Hook
 ```
 
 ## Weekly Archive
 
 | 주차 | 주제 | 핵심 인사이트 | 링크 |
 |:---:|:---:|:---:|:---:|
-| W1 | Knowledge Management System | 에이전트 간 통신 규격 설계가 핵심 | [week1.md](weekly/week1.md) |
+| W1 | Harness Engineering — 멀티에이전트 오케스트레이션 | Stop Hook + flock 동시성 + stdin JSON 기반 에이전트 추적 | [week1.md](weekly/week1.md) |
