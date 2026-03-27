@@ -1,0 +1,87 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test*)",
+      "Bash(npm run lint*)",
+      "Bash(npm run build*)",
+      "Bash(pytest*)",
+      "Bash(ruff check*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git status*)",
+      "Bash(git fetch*)",
+      "Bash(git merge*)",
+      "Bash(git branch*)",
+      "Bash(git checkout*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(mkdir*)",
+      "Bash(wc*)",
+      "Bash(date*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(grep*)",
+      "Bash(find*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Grep",
+      "Glob"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -r /*)",
+      "Bash(sudo *)",
+      "Bash(chmod 777*)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard*)",
+      "Bash(DROP TABLE*)",
+      "Bash(DROP DATABASE*)",
+      "Bash(> /dev/*)",
+      "Bash(dd if=*)",
+      "Bash(mkfs*)",
+      "Bash(:(){ :|:& };:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=\"$CLAUDE_TOOL_INPUT\"; if echo \"$CMD\" | grep -qiE \"(rm\\s+-rf|rm\\s+-r\\s+/|sudo\\s|chmod\\s+777|git\\s+push\\s+--force|git\\s+push\\s+-f|git\\s+reset\\s+--hard|DROP\\s+TABLE|DROP\\s+DATABASE)\"; then echo \"BLOCKED: Dangerous command detected — $CMD\" >&2; exit 2; fi; exit 0'"
+          }
+        ]
+      }
+    ],
+    "PreCommit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'SECRETS=$(git diff --cached --diff-filter=ACM -- . | grep -iEnc \"(api_key|api_secret|secret_key|password|token|credential|private_key)\\s*[=:]\\s*[\\x27\\\"][^\\x27\\\"]+[\\x27\\\"]\" 2>/dev/null || echo \"0\"); if [ \"$SECRETS\" -gt 0 ]; then echo \"BLOCKED: Potential secret detected in staged files. Run: git diff --cached | grep -iE secret\" >&2; exit 2; fi; exit 0'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; if echo \"$FILE\" | grep -qE \"\\.py$\"; then if command -v ruff >/dev/null 2>&1; then ruff check \"$FILE\" 2>&1 | head -5 || true; fi; elif echo \"$FILE\" | grep -qE \"\\.tsx?$\"; then if command -v npx >/dev/null 2>&1; then npx tsc --noEmit \"$FILE\" 2>&1 | head -5 || true; fi; fi; exit 0'"
+          }
+        ]
+      }
+    ]
+  }
+}
