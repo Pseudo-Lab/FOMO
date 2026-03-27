@@ -1,0 +1,6 @@
+# ※ 아래는 하네스 동작 확인용 예시 문제입니다.
+# ※ 실제 평가 목적(SQL, 데이터 분석, 업무 자동화 등)에 맞게 교체하세요.
+
+{"id": "example_001", "description": "두 정수를 입력받아 합을 반환하라. (※ 예시 문제 — 실제 문제로 교체 필요)", "function_signature": "def add(a: int, b: int) -> int:", "unit_tests": ["assert add(1, 2) == 3", "assert add(-1, 1) == 0", "assert add(0, 0) == 0"], "tags": ["example", "arithmetic"]}
+{"id": "example_002", "description": "문자열을 입력받아 뒤집어서 반환하라. (※ 예시 문제 — 실제 문제로 교체 필요)", "function_signature": "def reverse_string(s: str) -> str:", "unit_tests": ["assert reverse_string('hello') == 'olleh'", "assert reverse_string('') == ''", "assert reverse_string('a') == 'a'"], "tags": ["example", "string"]}
+{"id": "example_003", "description": "리스트에서 최댓값을 반환하라. (※ 예시 문제 — 실제 문제로 교체 필요)", "function_signature": "def find_max(nums: list) -> int:", "unit_tests": ["assert find_max([1, 3, 2]) == 3", "assert find_max([-1, -3, -2]) == -1", "assert find_max([0]) == 0"], "tags": ["example", "list"]}
