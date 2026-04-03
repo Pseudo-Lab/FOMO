@@ -1,3 +1,10 @@
 pyyaml
-# anthropic       # ※ Claude API 연결 시 주석 해제
-# openai          # ※ OpenAI API 연결 시 주석 해제
+
+# ─── LLM API ───────────────────────────────────────────────────────────────
+anthropic          # Claude API (mode: code / web 공통)
+# openai           # ※ OpenAI API 연결 시 주석 해제
+
+# ─── 웹 평가 (mode: "web") ──────────────────────────────────────────────────
+fastapi            # TestClient 기반 웹 샌드박스
+httpx              # FastAPI TestClient 의존성
+jsonschema         # JSON Schema 응답 검증
