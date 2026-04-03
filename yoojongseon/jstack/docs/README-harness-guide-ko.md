@@ -9,18 +9,21 @@
 
 | 항목 | 내용 |
 |------|------|
-| 크기 | 1,716줄 · 11개 파일 · 44KB |
+| 크기 | 2,048줄 · 15개 파일 · 51KB |
 | 외부 의존성 | 없음 (마크다운 파일만) |
-| 워크플로 | 5단 기어: /office-hours → /plan → /build → /review → /ship |
+| 워크플로 | 9개 커맨드: 5단 기어 + /autoplan + /careful + /freeze + /learn |
 | 아키텍처 | 4계층: L4 통제 → L3 실행 → L2 품질 → L1 구조 |
 | 영감 | G Stack (Garry Tan), OMC (oh-my-claudecode), FOMO (Pseudo Lab) |
 
 ## 핵심 기능
 
 - **5단 기어 워크플로** — 아이디어 검증부터 배포+회고까지 구조화된 흐름
+- **10-star product 사고법** — 요청을 곧이곧대로 구현하지 않고 숨은 10배짜리 제품을 찾기
+- **자동 기획 파이프라인** — `/autoplan`으로 기획부터 아키텍처까지 한 커맨드에
+- **안전 모드** — `/careful`로 위험 명령어 경고, `/freeze`로 디렉토리 잠금
+- **세션 간 학습** — `/learn`으로 패턴과 실수를 저장, 다음 세션에서 자동 적용
 - **프로젝트 자동 감지** — 새 프로젝트면 `/office-hours`부터, 기존이면 CHECKPOINT에서 재개
 - **복잡도 게이트** — Simple/Medium/Complex 자동 분기로 프로젝트 규모에 맞는 인터뷰 깊이
-- **Forcing Questions** — Ask → Push until → Red flags 패턴 (G Stack에서 영감)
 - **아키텍처 보호** — `/build`에서 승인 없는 설계 변경을 물리적으로 차단
 - **스코프 크리프 방지** — 계획에 없는 기능은 구현 안 하고 관찰만 기록
 - **CHECKPOINT 상태머신** — 세션이 끊겨도 다음 세션에서 자동으로 맥락 복원
@@ -30,12 +33,15 @@
 
 | 지표 | G Stack | OMC | JStack |
 |------|---------|-----|--------|
-| 크기 | 150KB+ | 300KB+ | 44KB |
+| 크기 | 150KB+ | 300KB+ | 51KB |
 | 외부 의존성 | Bun, Playwright | npm, tmux | 없음 |
 | 단계 간 연결 | ls로 파일 탐색 | 세션 메모리 의존 | CHECKPOINT 상태머신 |
 | 프로젝트 자동 생성 | ✕ | ✕ | ✅ |
 | 아키텍처 보호 | ✕ | △ | ✅ |
 | 스코프 크리프 방지 | ✕ | ✕ | ✅ |
+| 안전 모드 (/careful, /freeze) | ✅ | ✕ | ✅ |
+| 세션 간 학습 (/learn) | ✅ | ✕ | ✅ |
+| 자동 기획 (/autoplan) | ✅ | ✕ | ✅ |
 | 병렬 실행 | △ | ✅ | ✕ (추후) |
 
 ## 빠른 시작
@@ -67,12 +73,16 @@ claude
 ```
 ~/.claude/                          ← 글로벌 (모든 프로젝트 공통)
 ├── CLAUDE.md                       ← 이 파일. 항상 로딩됨.
-├── commands/                       ← 5단 기어 (슬래시 커맨드)
-│   ├── office-hours.md             ← /office-hours: 아이디어 검증
+├── commands/                       ← 9개 커맨드 (슬래시 커맨드)
+│   ├── office-hours.md             ← /office-hours: 아이디어 검증 + 10-star 사고법
 │   ├── plan.md                     ← /plan: 아키텍처 설계
 │   ├── build.md                    ← /build: 구현
 │   ├── review.md                   ← /review: 코드 리뷰 + QA
-│   └── ship.md                     ← /ship: 배포 + 회고
+│   ├── ship.md                     ← /ship: 배포 + 회고
+│   ├── autoplan.md                 ← /autoplan: office-hours→plan 자동 연쇄
+│   ├── careful.md                  ← /careful: 위험 명령어 경고 모드
+│   ├── freeze.md                   ← /freeze: 디렉토리 잠금 모드
+│   └── learn.md                    ← /learn: 세션 간 학습 관리
 ├── rules/                          ← 조건부 규칙 (파일 타입별 자동 적용)
 │   ├── python.md                   ← *.py 파일에 자동 적용
 │   ├── typescript.md               ← *.ts, *.tsx 파일에 자동 적용
@@ -93,15 +103,25 @@ claude
 
 ```
 /office-hours → /plan → /build → /review → /ship
+(또는 /autoplan으로 기획~설계를 한 번에)
 ```
 
 | 기어 | 역할 | 산출물 |
 |------|------|--------|
-| /office-hours | 아이디어 검증, 사용자 이해, 문제 정의 | 디자인 문서 (docs/designs/) |
+| /office-hours | 아이디어 검증, 10-star product 사고, 문제 정의 | 디자인 문서 (docs/designs/) |
 | /plan | 기술 스택 확정, 아키텍처 설계, 테스트 전략 | 프로젝트 CLAUDE.md + 아키텍처 문서 |
 | /build | 승인된 계획에 따라 코드 작성 | 구현된 코드 + 테스트 |
 | /review | CI는 통과하지만 프로덕션에서 깨지는 버그 탐색 | 리뷰 리포트 + 수정 사항 |
 | /ship | 동기화, 테스트, 커밋, 릴리즈 노트 작성 | 배포 완료 + CHECKPOINT 업데이트 |
+
+### 추가 커맨드
+
+| 커맨드 | 카테고리 | 역할 |
+|--------|---------|------|
+| /autoplan | 자동화 | /office-hours → /plan을 한 커맨드로 자동 연쇄 실행. 사람 판단 필요한 곳에서만 멈춤 |
+| /careful | 안전 | 위험 명령어(rm -rf, DROP TABLE, force push 등) 실행 전 경고. 빌드 클린업은 화이트리스트로 통과 |
+| /freeze | 안전 | 특정 디렉토리만 수정 가능하게 잠금. 디버깅 시 다른 모듈 건드리는 것 방지. /unfreeze로 해제 |
+| /learn | 메타 | 세션에서 배운 패턴/실수/선호도를 docs/learnings.md에 저장. 다음 세션에서 자동 적용. 프로젝트 간 교차 학습 가능 |
 
 ### 새 프로젝트 규칙 (엄격)
 - 반드시 /office-hours부터 시작

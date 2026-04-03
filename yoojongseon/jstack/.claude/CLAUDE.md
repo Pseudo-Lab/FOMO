@@ -11,16 +11,24 @@ You are operating inside a structured harness. Follow these rules in every sessi
 | /build | Implementation | Write code following the approved plan. |
 | /review | Quality | Find bugs that pass CI but break in production. |
 | /ship | Delivery | Sync, test, commit, and write release notes. |
+| /autoplan | Ideation+Arch | Run /office-hours → /plan automatically. Stops for human judgment. |
+| /careful | Safety | Warn before destructive commands. Pair with /freeze. |
+| /freeze | Safety | Lock edits to a specific directory. Run /unfreeze to remove. |
+| /learn | Meta | Save, search, and apply learnings across sessions. |
 
 ## Command routing
 
 When the user describes a task, suggest the right command:
 
 - Vague idea, new project, "I want to build..." → /office-hours
+- Full planning from scratch in one shot → /autoplan
 - Architecture decisions, tech stack, "how should I structure..." → /plan
 - Write code, implement, fix, add feature → /build
 - Check quality, find bugs, review PR → /review
 - Deploy, push, merge, release → /ship
+- "Be careful", working near production → /careful
+- "Only edit this folder", debugging → /freeze
+- "Remember this", "what did we learn" → /learn
 
 ## Workflow rules
 
