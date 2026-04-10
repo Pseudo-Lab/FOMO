@@ -1,0 +1,13 @@
+case_id	item_id	title	urgency	due_hours	prep_minutes	team_impact	user_visible	expected_rank
+B1	prep_exec_review	Prepare executive review	4	1	45	4	1	1
+B1	unblock_design	Unblock design decision	3	3	10	5	1	2
+B1	write_status_note	Write status note	2	6	5	2	0	3
+B1	inbox_cleanup	Clean inbox	1	24	0	1	0	4
+B2	board_demo_prep	Prepare board demo	3	1	60	2	1	1
+B2	unblock_sales_pricing	Unblock sales pricing decision	3	4	15	2	1	2
+B2	triage_minor_bug	Triage minor bug	5	24	0	1	0	3
+B2	tidy_notes	Tidy personal notes	1	12	0	0	0	4
+B3	finalize_hiring_debrief	Finalize hiring debrief	2	2	30	5	1	1
+B3	resolve_release_question	Resolve release question	3	3	10	4	1	2
+B3	chase_personal_receipt	Chase personal receipt	4	6	5	0	0	3
+B3	backfill_crm	Backfill CRM notes	1	48	0	1	0	4

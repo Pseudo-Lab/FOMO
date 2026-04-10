@@ -1,0 +1,13 @@
+case_id	item_id	title	severity	sla_minutes	vip_account	overnight_incident	revenue_risk	expected_rank
+O1	vip_outage	VIP account outage	4	20	1	1	4	1
+O1	standard_bug	Standard bug backlog	5	240	0	1	1	2
+O1	renewal_question	Renewal risk question	2	60	1	0	3	3
+O1	docs_fix	Docs fix	1	1440	0	0	0	4
+O2	churn_risk_latency	Churn risk latency issue	3	90	0	1	5	1
+O2	vip_password_reset	VIP password reset	4	480	1	0	1	2
+O2	longtail_ticket	Long-tail billing ticket	2	30	0	1	2	3
+O2	internal_report	Internal report cleanup	1	1440	0	0	0	4
+O3	enterprise_api_degradation	Enterprise API degradation	4	60	1	1	5	1
+O3	high_volume_billing_confusion	High-volume billing confusion	5	720	0	0	2	2
+O3	smb_feature_question	SMB feature question	3	180	0	0	1	3
+O3	duplicate_tag_cleanup	Duplicate tag cleanup	1	1440	0	0	0	4
