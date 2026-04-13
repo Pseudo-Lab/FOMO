@@ -1,0 +1,7 @@
+case_id	item_id	title	forecast_gap_pct	board_deadline_hours	cross_team_dependency	exec_visibility	revenue_impact	expected_rank
+BL1	board_pack_gap	Resolve board pack forecast gap	5	12	4	1	5	1
+BL1	cs_churn_variance	Review CS churn variance	8	168	1	0	2	2
+BL1	campaign_tag_cleanup	Clean campaign tag mapping	3	240	1	0	1	3
+BL2	strategic_renewal_pullin	Check strategic renewal pull-in	4	24	5	1	5	1
+BL2	partner_commit_gap	Validate partner commit gap	6	96	3	0	3	2
+BL2	regional_forecast_gap	Review regional forecast gap	9	336	1	0	1	3

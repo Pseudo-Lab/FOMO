@@ -8,15 +8,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODE="hypothesis"
 USECASE="briefing"
+DATASET_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
 Usage:
-  service_value_eval.sh [--mode hypothesis|baseline] [briefing|ops-handoff]
+  service_value_eval.sh [--mode hypothesis|baseline] [--dataset path.tsv] [briefing|ops-handoff|biz-planning]
 
 Modes:
   hypothesis  Evaluate the service hypothesis algorithm
   baseline    Evaluate the naive baseline algorithm
+
+Options:
+  --dataset path.tsv  Use an external TSV dataset with the selected usecase schema
 EOF
 }
 
@@ -28,6 +32,14 @@ while [ $# -gt 0 ]; do
         exit 1
       fi
       MODE="$2"
+      shift 2
+      ;;
+    --dataset)
+      if [ $# -lt 2 ]; then
+        echo "error: --dataset requires a path." >&2
+        exit 1
+      fi
+      DATASET_OVERRIDE="$2"
       shift 2
       ;;
     --help|-h)
@@ -50,6 +62,15 @@ case "$MODE" in
     ;;
 esac
 
+case "$USECASE" in
+  briefing|ops-handoff|biz-planning|business-planning) ;;
+  *)
+    echo "error: unsupported usecase: $USECASE" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
 dataset_for_usecase() {
   case "$1" in
     briefing)
@@ -58,11 +79,74 @@ dataset_for_usecase() {
     ops-handoff)
       printf '%s\n' "$ROOT_DIR/fixtures/service_value/ops_handoff_priority_cases.tsv"
       ;;
+    biz-planning|business-planning)
+      printf '%s\n' "$ROOT_DIR/fixtures/service_value/biz_planning_priority_cases.tsv"
+      ;;
     *)
       echo "error: unsupported usecase: $1" >&2
       exit 1
       ;;
   esac
+}
+
+expected_header_for_usecase() {
+  case "$1" in
+    briefing)
+      printf '%s\n' "case_id	item_id	title	urgency	due_hours	prep_minutes	team_impact	user_visible	expected_rank"
+      ;;
+    ops-handoff)
+      printf '%s\n' "case_id	item_id	title	severity	sla_minutes	vip_account	overnight_incident	revenue_risk	expected_rank"
+      ;;
+    biz-planning|business-planning)
+      printf '%s\n' "case_id	item_id	title	forecast_gap_pct	board_deadline_hours	cross_team_dependency	exec_visibility	revenue_impact	expected_rank"
+      ;;
+  esac
+}
+
+validate_dataset_contract() {
+  local dataset="$1"
+  local expected_header header
+
+  expected_header="$(expected_header_for_usecase "$USECASE")"
+
+  if ! IFS= read -r header < "$dataset"; then
+    echo "error: dataset is empty: $dataset" >&2
+    exit 1
+  fi
+
+  header="${header%$'\r'}"
+  if [ "$header" != "$expected_header" ]; then
+    echo "error: dataset header does not match $USECASE schema: $dataset" >&2
+    echo "expected: $expected_header" >&2
+    echo "actual:   $header" >&2
+    exit 1
+  fi
+
+  if ! awk -F'\t' '
+    NR > 1 {
+      rows += 1
+      cases[$1] = 1
+      if ($9 !~ /^[0-9]+$/) {
+        bad_rank += 1
+      }
+      if (($9 + 0) == 1) {
+        gold[$1] += 1
+      }
+    }
+    END {
+      if (rows == 0 || bad_rank > 0) {
+        exit 1
+      }
+      for (case_id in cases) {
+        if (gold[case_id] != 1) {
+          exit 1
+        }
+      }
+    }
+  ' "$dataset"; then
+    echo "error: dataset must have rows, numeric expected_rank, and exactly one gold rank per case: $dataset" >&2
+    exit 1
+  fi
 }
 
 print_stage_0() {
@@ -107,6 +191,28 @@ service=ops-handoff
 decision=support ops lead가 오늘 가장 먼저 대응할 고객과 이슈를 빠르게 결정하게 만든다
 hypothesis=baseline run
 baseline=severity만 보는 단순 정렬
+primary_metric=top1_accuracy
+secondary_metric=mrr,mean_gold_rank
+EOF
+      ;;
+    biz-planning:hypothesis|business-planning:hypothesis)
+      cat <<'EOF'
+[stage 0] hypothesis lens
+service=biz-planning
+decision=사업기획팀이 주간 운영 회의 전에 어떤 매출 가정과 리스크를 먼저 확인할지 빠르게 결정하게 만든다
+hypothesis=forecast gap만 보지 않고 board deadline, cross-team dependency, executive visibility, revenue impact를 함께 반영하면 첫 확인 항목 선택이 더 정확해진다
+baseline=forecast gap만 보는 단순 정렬
+primary_metric=top1_accuracy
+secondary_metric=mrr,mean_gold_rank
+EOF
+      ;;
+    biz-planning:baseline|business-planning:baseline)
+      cat <<'EOF'
+[stage 0] hypothesis lens
+service=biz-planning
+decision=사업기획팀이 주간 운영 회의 전에 어떤 매출 가정과 리스크를 먼저 확인할지 빠르게 결정하게 만든다
+hypothesis=baseline run
+baseline=forecast gap만 보는 단순 정렬
 primary_metric=top1_accuracy
 secondary_metric=mrr,mean_gold_rank
 EOF
@@ -186,6 +292,39 @@ score_dataset() {
         }
       ' "$dataset"
       ;;
+    biz-planning:hypothesis|business-planning:hypothesis)
+      awk -F'\t' '
+        BEGIN { OFS = "\t" }
+        NR == 1 { next }
+        {
+          forecast_gap_pct = $4 + 0
+          board_deadline_hours = $5 + 0
+          cross_team_dependency = $6 + 0
+          exec_visibility = $7 + 0
+          revenue_impact = $8 + 0
+          gold_rank = $9 + 0
+
+          deadline_component = (board_deadline_hours <= 24 ? 35 : (board_deadline_hours <= 72 ? 20 : (board_deadline_hours <= 168 ? 10 : 0)))
+          score = (forecast_gap_pct * 10) + deadline_component + (cross_team_dependency * 18) + (exec_visibility * 20) + (revenue_impact * 20)
+
+          reason = "gap:" (forecast_gap_pct * 10) ",deadline:" deadline_component ",dependency:" (cross_team_dependency * 18) ",exec:" (exec_visibility * 20) ",revenue:" (revenue_impact * 20)
+          print $1, $2, $3, gold_rank, score, reason
+        }
+      ' "$dataset"
+      ;;
+    biz-planning:baseline|business-planning:baseline)
+      awk -F'\t' '
+        BEGIN { OFS = "\t" }
+        NR == 1 { next }
+        {
+          forecast_gap_pct = $4 + 0
+          gold_rank = $9 + 0
+          score = forecast_gap_pct
+          reason = "forecast_gap_only:" forecast_gap_pct
+          print $1, $2, $3, gold_rank, score, reason
+        }
+      ' "$dataset"
+      ;;
   esac
 }
 
@@ -239,11 +378,16 @@ print_stage_1() {
 
   echo "[stage 1] case audit"
   echo "dataset=$dataset"
+  if [ -n "$DATASET_OVERRIDE" ]; then
+    echo "dataset_source=override"
+  else
+    echo "dataset_source=fixture"
+  fi
   echo "mode=$MODE"
   echo "rows=$rows"
   echo "cases=$cases"
   echo "mean_items_per_case=$mean_items"
-  echo "validation_contract=fixed_dataset,explicit_gold_labels,case_count>=1"
+  echo "validation_contract=dataset_schema_matches_usecase,explicit_gold_labels,case_count>=1"
   echo
 }
 
@@ -336,6 +480,13 @@ print_stage_3() {
 
 print_stage_4() {
   local dataset="$1"
+  local rerun_command
+
+  rerun_command="bash kimjungsu/code/service_value_eval.sh --mode $MODE"
+  if [ -n "$DATASET_OVERRIDE" ]; then
+    rerun_command="$rerun_command --dataset $DATASET_OVERRIDE"
+  fi
+  rerun_command="$rerun_command $USECASE"
 
   echo "[stage 4] reproducibility contract"
   echo "goal=같은 입력과 같은 규칙이면 같은 출력이 반복돼야 한다"
@@ -344,16 +495,22 @@ print_stage_4() {
   echo "mode=$MODE"
   echo "randomness=none"
   echo "tie_break=item_id_lexical_order"
-  echo "rerun_command=bash kimjungsu/code/service_value_eval.sh --mode $MODE $USECASE"
+  echo "rerun_command=$rerun_command"
   echo
 }
 
-DATASET="$(dataset_for_usecase "$USECASE")"
+if [ -n "$DATASET_OVERRIDE" ]; then
+  DATASET="$DATASET_OVERRIDE"
+else
+  DATASET="$(dataset_for_usecase "$USECASE")"
+fi
 
 if [ ! -f "$DATASET" ]; then
   echo "error: dataset not found: $DATASET" >&2
   exit 1
 fi
+
+validate_dataset_contract "$DATASET"
 
 RANKED_ROWS="$(rank_scored_rows "$DATASET")"
 

@@ -4,11 +4,14 @@ set -euo pipefail
 
 STAGE="all"
 TARGET="."
+PROFILE="default"
+CUSTOM_EXCLUDES=()
+ACTIVE_EXCLUDES=()
 
 usage() {
   cat <<'EOF'
 Usage:
-  project_scan.sh [--stage 1|2|3|4|all] [target]
+  project_scan.sh [--stage 1|2|3|4|all] [--profile default|real-repo] [--exclude glob] [target]
 
 Stages:
   1    Inventory: count files with minimal assumptions
@@ -16,6 +19,10 @@ Stages:
   3    Area priority: rank top-level areas to inspect first
   4    Read-first files: recommend concrete files to open first
   all  Run every stage in order
+
+Profiles:
+  default    Keep current scan behavior for fixtures and controlled experiments
+  real-repo  Exclude experiment assets and common generated/vendor paths
 EOF
 }
 
@@ -27,6 +34,22 @@ while [ $# -gt 0 ]; do
         exit 1
       fi
       STAGE="$2"
+      shift 2
+      ;;
+    --profile)
+      if [ $# -lt 2 ]; then
+        echo "error: --profile requires a value." >&2
+        exit 1
+      fi
+      PROFILE="$2"
+      shift 2
+      ;;
+    --exclude)
+      if [ $# -lt 2 ]; then
+        echo "error: --exclude requires a glob." >&2
+        exit 1
+      fi
+      CUSTOM_EXCLUDES+=("$2")
       shift 2
       ;;
     --help|-h)
@@ -49,6 +72,15 @@ case "$STAGE" in
     ;;
 esac
 
+case "$PROFILE" in
+  default|real-repo) ;;
+  *)
+    echo "error: invalid profile: $PROFILE" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
 if ! command -v rg >/dev/null 2>&1; then
   echo "error: ripgrep (rg) is required." >&2
   exit 1
@@ -61,13 +93,68 @@ fi
 
 ROOT="$(cd "$TARGET" && pwd)"
 
+build_active_excludes() {
+  ACTIVE_EXCLUDES=()
+
+  case "$PROFILE" in
+    real-repo)
+      ACTIVE_EXCLUDES+=(
+        'fixtures/**'
+        '**/fixtures/**'
+        'usecases/**'
+        '**/usecases/**'
+        'datasets/**'
+        '**/datasets/**'
+        'reports/**'
+        '**/reports/**'
+        '__pycache__/**'
+        '**/__pycache__/**'
+        '*.pyc'
+        '**/*.pyc'
+        '.pytest_cache/**'
+        '**/.pytest_cache/**'
+        '.venv/**'
+        '**/.venv/**'
+        'node_modules/**'
+        '**/node_modules/**'
+      )
+      ;;
+  esac
+
+  ACTIVE_EXCLUDES+=("${CUSTOM_EXCLUDES[@]}")
+}
+
+rg_files_with_globs() {
+  local -a args
+  local exclude glob
+
+  args=(--files --hidden -g '!.git')
+
+  for glob in "$@"; do
+    args+=(-g "$glob")
+  done
+
+  for exclude in "${ACTIVE_EXCLUDES[@]}"; do
+    case "$exclude" in
+      !*)
+        args+=(-g "$exclude")
+        ;;
+      *)
+        args+=(-g "!$exclude")
+        ;;
+    esac
+  done
+
+  rg "${args[@]}" "$ROOT" || true
+}
+
 rg_files() {
-  rg --files --hidden -g '!.git' "$ROOT" || true
+  rg_files_with_globs
 }
 
 rg_files_glob() {
   local glob="$1"
-  rg --files --hidden -g '!.git' -g "$glob" "$ROOT" || true
+  rg_files_with_globs "$glob"
 }
 
 list_rel_files() {
@@ -92,6 +179,8 @@ join_comma_or_none() {
 print_common_header() {
   echo "== Project Scan =="
   echo "target=$ROOT"
+  echo "profile=$PROFILE"
+  echo "excludes=$(join_comma_or_none "${ACTIVE_EXCLUDES[@]}")"
   echo
 }
 
@@ -174,10 +263,10 @@ run_stage_2() {
     esac
   done < <(
     {
-      rg --files --hidden -g '!.git' -g 'README*' -g 'package.json' -g 'pnpm-lock.yaml' -g 'yarn.lock' \
-        -g 'package-lock.json' -g 'tsconfig.json' -g 'vite.config.*' -g 'next.config.*' \
-        -g 'pyproject.toml' -g 'requirements.txt' -g 'Cargo.toml' -g 'go.mod' \
-        -g 'Dockerfile' -g 'docker-compose*' -g '.env.example' "$ROOT" || true
+      rg_files_with_globs 'README*' 'package.json' 'pnpm-lock.yaml' 'yarn.lock' \
+        'package-lock.json' 'tsconfig.json' 'vite.config.*' 'next.config.*' \
+        'pyproject.toml' 'requirements.txt' 'Cargo.toml' 'go.mod' \
+        'Dockerfile' 'docker-compose*' '.env.example'
     } | sed "s#^$ROOT/##" | sed 's#^/##' | sort -u
   )
 
@@ -403,6 +492,7 @@ run_stage_4() {
   echo
 }
 
+build_active_excludes
 print_common_header
 
 case "$STAGE" in

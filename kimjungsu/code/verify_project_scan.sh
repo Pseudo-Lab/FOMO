@@ -10,6 +10,7 @@ SAMPLE_FIXTURE="$FIXTURE_ROOT/sample_app"
 DOCS_FIXTURE="$FIXTURE_ROOT/docs_only"
 BRIEFING_FIXTURE="$FIXTURE_ROOT/briefing_app"
 OPS_HANDOFF_FIXTURE="$FIXTURE_ROOT/ops_handoff"
+BIZ_PLANNING_FIXTURE="$FIXTURE_ROOT/biz_planning"
 SMOKE_TARGET="${1:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 
 if ! command -v rg >/dev/null 2>&1; then
@@ -32,7 +33,7 @@ assert_contains() {
   local needle="$2"
   local message="$3"
 
-  if printf '%s\n' "$haystack" | rg -Fq "$needle"; then
+  if printf '%s\n' "$haystack" | rg -Fq -- "$needle"; then
     echo "PASS $message"
   else
     echo "FAIL $message" >&2
@@ -45,7 +46,7 @@ assert_not_contains() {
   local needle="$2"
   local message="$3"
 
-  if printf '%s\n' "$haystack" | rg -Fq "$needle"; then
+  if printf '%s\n' "$haystack" | rg -Fq -- "$needle"; then
     echo "FAIL $message" >&2
     return 1
   else
@@ -181,6 +182,31 @@ check_ops_handoff_usecase() {
   assert_contains "$stage4" "3|apps/admin/README.md|score=330|why=area:apps,area_score:17,role:area-readme,file_bonus:160" "ops handoff stage 4 rank 3"
 }
 
+check_biz_planning_usecase() {
+  local stage1 stage2 stage3 stage4 usecase_output
+  stage1="$("$SCAN_SCRIPT" --stage 1 "$BIZ_PLANNING_FIXTURE")"
+  stage2="$("$SCAN_SCRIPT" --stage 2 "$BIZ_PLANNING_FIXTURE")"
+  stage3="$("$SCAN_SCRIPT" --stage 3 "$BIZ_PLANNING_FIXTURE")"
+  stage4="$("$SCAN_SCRIPT" --stage 4 "$BIZ_PLANNING_FIXTURE")"
+  usecase_output="$("$SCRIPT_DIR/run_project_scan_usecase.sh" biz-planning)"
+
+  assert_contains "$stage1" "markdown=6" "biz planning stage 1 markdown count"
+  assert_contains "$stage1" "python=1" "biz planning stage 1 python count"
+  assert_contains "$stage1" "json=1" "biz planning stage 1 json count"
+  assert_contains "$stage1" "typescript=1" "biz planning stage 1 typescript count"
+  assert_contains "$stage2" "docs=README.md,apps/planning-console/README.md,services/forecasting/README.md" "biz planning stage 2 docs anchors"
+  assert_contains "$stage2" "python=services/forecasting/pyproject.toml" "biz planning stage 2 python anchor"
+  assert_contains "$stage2" "node=apps/planning-console/package.json" "biz planning stage 2 node anchor"
+  assert_contains "$stage2" "env=services/forecasting/.env.example" "biz planning stage 2 env anchor"
+  assert_contains "$stage3" "1|services|score=23|reasons=files:4,anchors:3,source:1,readme,python,env" "biz planning stage 3 services rank"
+  assert_contains "$stage3" "2|apps|score=17|reasons=files:3,anchors:2,source:1,readme,node" "biz planning stage 3 apps rank"
+  assert_contains "$stage3" "4|docs|score=3|reasons=files:3" "biz planning stage 3 operations docs signal"
+  assert_contains "$stage4" "2|services/forecasting/README.md|score=390|why=area:services,area_score:23,role:area-readme,file_bonus:160" "biz planning stage 4 service README rank"
+  assert_contains "$stage4" "3|apps/planning-console/README.md|score=330|why=area:apps,area_score:17,role:area-readme,file_bonus:160" "biz planning stage 4 console README rank"
+  assert_contains "$usecase_output" "scenario=주간 매출 전망과 운영 회의 액션을 정리해야 하는 사업기획팀" "biz planning usecase header is realistic"
+  assert_contains "$usecase_output" "why_primary_area=services/forecasting은 forecast gap과 revenue impact를 우선순위로 바꾸는 가치 엔진이므로 먼저 읽는다" "biz planning rationale explains forecasting engine"
+}
+
 check_boundary_separation() {
   local stage1 stage2 stage3 stage4
   stage1="$("$SCAN_SCRIPT" --stage 1 "$SAMPLE_FIXTURE")"
@@ -217,6 +243,49 @@ check_baseline_comparison() {
   assert_contains "$structured_stage4" "[read-first]" "structured stage 4 adds read-first structure"
 }
 
+check_real_repo_profile() {
+  local target stage3 stage4
+  target="$(cd "$SCRIPT_DIR/.." && pwd)"
+  stage3="$("$SCAN_SCRIPT" --stage 3 --profile real-repo "$target")"
+  stage4="$("$SCAN_SCRIPT" --stage 4 --profile real-repo "$target")"
+
+  assert_contains "$stage3" "profile=real-repo" "real repo profile is reported"
+  assert_not_contains "$stage3" "1|fixtures|" "real repo profile excludes fixture area priority"
+  assert_not_contains "$stage3" "|usecases|" "real repo profile excludes usecase area priority"
+  assert_not_contains "$stage3" "|datasets|" "real repo profile excludes dataset area priority"
+  assert_contains "$stage4" "1|README.md|" "real repo profile keeps root README first"
+  assert_not_contains "$stage4" "|fixtures/" "real repo profile excludes fixture read-first files"
+  assert_not_contains "$stage4" "|usecases/" "real repo profile excludes usecase read-first files"
+  assert_not_contains "$stage4" "|datasets/" "real repo profile excludes dataset read-first files"
+}
+
+check_report_mode() {
+  local report_path report_output
+  report_path="$(mktemp /tmp/project_scan_report.XXXXXX.md)"
+  trap 'rm -f "$report_path"' RETURN
+
+  "$SCRIPT_DIR/run_project_scan_usecase.sh" --report "$report_path" docs-only >/dev/null
+  report_output="$(cat "$report_path")"
+
+  assert_contains "$report_output" "# Project Scan Report" "report mode writes markdown title"
+  assert_contains "$report_output" "- usecase: docs-only" "report mode records usecase"
+  assert_contains "$report_output" "[service lens]" "report mode includes service lens"
+  assert_contains "$report_output" "[stage 1] inventory" "report mode includes stage 1"
+  assert_contains "$report_output" "[stage 4] read-first files" "report mode includes stage 4"
+  assert_contains "$report_output" "[read-first service rationale]" "report mode includes service rationale"
+}
+
+check_service_rationale() {
+  local briefing ops
+  briefing="$("$SCRIPT_DIR/run_project_scan_usecase.sh" briefing-app)"
+  ops="$("$SCRIPT_DIR/run_project_scan_usecase.sh" ops-handoff)"
+
+  assert_contains "$briefing" "why_primary_area=web은 사용자가 브리핑 가치를 체감하는 접점이므로 먼저 읽는다" "briefing rationale explains web value moment"
+  assert_contains "$briefing" "why_secondary_area=python service는 브리핑 품질과 우선순위 로직을 책임지므로 그 다음에 읽는다" "briefing rationale explains service engine"
+  assert_contains "$ops" "why_primary_area=services/digest는 야간 이슈와 우선 대응 순서를 만드는 가치 엔진이므로 먼저 읽는다" "ops rationale explains digest engine"
+  assert_contains "$ops" "why_secondary_area=apps/admin은 운영자가 결과를 점검하는 보조 접점이므로 digest engine 다음에 읽는다" "ops rationale explains admin support role"
+}
+
 check_smoke_target() {
   local output
   output="$("$SCAN_SCRIPT" --stage all "$SMOKE_TARGET")"
@@ -234,8 +303,12 @@ check_sample_fixture_stage_4
 check_docs_only_fixture
 check_briefing_usecase
 check_ops_handoff_usecase
+check_biz_planning_usecase
 check_boundary_separation
 check_baseline_comparison
+check_real_repo_profile
+check_report_mode
+check_service_rationale
 check_smoke_target
 
 echo "PASS overall: project_scan satisfies fixture, usecase, boundary, baseline, and smoke validation"

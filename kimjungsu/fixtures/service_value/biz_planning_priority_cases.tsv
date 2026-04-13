@@ -1,0 +1,21 @@
+case_id	item_id	title	forecast_gap_pct	board_deadline_hours	cross_team_dependency	exec_visibility	revenue_impact	expected_rank
+P1	q4_board_reforecast	Refresh Q4 board reforecast	4	24	4	1	5	1
+P1	long_tail_churn_slice	Review long-tail churn slice	7	168	1	0	2	2
+P1	sales_ops_cleanup	Clean sales ops mapping	3	72	2	0	2	3
+P1	dashboard_copy	Update planning dashboard copy	2	240	0	0	1	4
+P2	pricing_guardrail_decision	Decide pricing guardrail exception	5	12	5	1	4	1
+P2	hiring_capacity_model	Recheck hiring capacity model	4	72	3	0	3	2
+P2	regional_variance_deepdive	Deep dive regional variance	8	240	1	0	1	3
+P2	new_segment_naming	Align new segment naming	2	336	1	0	1	4
+P3	pipeline_pullin_risk	Check pipeline pull-in risk	3	6	4	1	5	1
+P3	partner_commit_gap	Validate partner commit gap	5	96	3	0	3	2
+P3	annual_plan_edge_case	Review annual plan edge case	9	336	1	0	1	3
+P3	expense_tag_cleanup	Clean expense tag mapping	2	240	1	0	1	4
+P4	strategic_enterprise_slip	Validate strategic enterprise slip	10	24	5	1	5	1
+P4	midmarket_forecast_gap	Review midmarket forecast gap	7	96	3	0	3	2
+P4	webinar_pipeline_label	Fix webinar pipeline label	3	240	1	0	1	3
+P4	expense_phasing_note	Update expense phasing note	2	336	1	0	1	4
+P5	partner_launch_dependency	Resolve partner launch dependency	4	48	5	1	4	1
+P5	high_gap_low_impact_region	Review high gap low impact region	9	336	1	0	1	3
+P5	renewal_timing_confirm	Confirm renewal timing assumption	5	96	3	0	3	2
+P5	calendar_cleanup	Clean planning calendar labels	2	240	1	0	1	4
