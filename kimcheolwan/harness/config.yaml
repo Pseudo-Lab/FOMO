@@ -1,36 +1,36 @@
-# 공용 평가 하네스 설정 파일
+# Flutter 평가 하네스 설정 파일
 # ※ 팀원마다 이 파일을 수정해서 자신의 평가 환경에 맞게 사용
 
 # 평가 모드
-# "code" — 코드 생성 평가 (week1)
-# "web"  — 웹/앱 서비스 평가 (week2)
-mode: "web"
+# "widget" — Flutter 위젯 테스트 평가
+# "logic"  — Dart 순수 로직 테스트 평가
+mode: "widget"
 
 # LLM 설정
 llm:
   provider: "anthropic"              # "anthropic" | "openai"
-  model: "claude-sonnet-4-6"         # ※ 사용할 모델로 교체 (예: gpt-4o, claude-opus-4-6)
+  model: "claude-sonnet-4-6"         # ※ 사용할 모델로 교체
   api_key_env: "ANTHROPIC_API_KEY"   # ※ 환경변수 이름 — 키를 직접 여기 쓰지 말 것
 
 # 샌드박스 설정
 sandbox:
-  timeout_sec: 5                     # 코드 실행 최대 허용 시간 (초)
+  timeout_sec: 120                   # flutter test 빌드 포함 시 충분한 시간 필요
+  pub_get_timeout_sec: 60            # flutter pub get 제한 시간
+  cleanup: true                      # 임시 프로젝트 자동 정리
 
 # 데이터 경로
 data:
-  # ※ mode에 맞는 파일로 교체
-  # code mode: "data/problems.jsonl"
-  # web  mode: "data/web_problems.jsonl"
-  problems_path: "data/web_problems.jsonl"
+  problems_path: "data/flutter_problems.jsonl"
 
 # 결과 저장
 results:
-  output_dir: "results/"             # 채점 결과 저장 폴더
+  output_dir: "results/"
 
-# 웹 평가 설정 (mode: "web" 시 적용)
-web:
-  framework: "fastapi"
+# Flutter 평가 설정 (mode: "widget" | "logic" 시 공통 적용)
+flutter:
+  sdk_path: ""                       # 비워두면 PATH에서 자동 탐색
+  template_project: "template_project/"
   score_weights:
-    status: 0.3      # HTTP 상태 코드 일치율
-    schema: 0.4      # 응답 JSON Schema 적합도
-    security: 0.3    # 정적 보안 검사 점수
+    test: 0.4                        # flutter test 통과율
+    lint: 0.3                        # dart analyze 정적 분석
+    security: 0.3                    # 보안 정적 검사

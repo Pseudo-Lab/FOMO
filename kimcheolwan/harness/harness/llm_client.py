@@ -1,71 +1,55 @@
 """
-② LLMClient — 파이프라인 2단계
-역할: Problem / WebProblem을 받아 프롬프트를 구성하고 LLM API를 호출
+② LLMClient — Flutter 평가 하네스 2단계
+역할: FlutterProblem을 받아 프롬프트를 구성하고 LLM API를 호출해 Dart 코드 생성
 
-[week1] 코드 생성 프롬프트 (함수 구현)
-[week2] 웹 엔드포인트 생성 프롬프트 (FastAPI / Flask)
-        실제 Anthropic / OpenAI API 연결
+[widget] Flutter 위젯 구현 프롬프트 (StatelessWidget / StatefulWidget)
+[logic]  Dart 순수 함수 구현 프롬프트
 """
 
 import os
 import re
 
-from harness.loader import Problem, WebProblem
+from harness.loader import FlutterProblem
 
 
 # ─── 프롬프트 빌더 ────────────────────────────────────────────────────────
 
-def build_code_prompt(problem: Problem) -> str:
-    """Week1: 코드 생성 평가용 프롬프트."""
-    return f"""다음 문제를 파이썬으로 풀어주세요.
+def build_widget_prompt(problem: FlutterProblem) -> str:
+    """Widget mode: Flutter 위젯 구현 프롬프트."""
+    hint_section = f"\n코드 힌트:\n{problem.hint}" if problem.hint else ""
 
-문제: {problem.description}
+    return f"""다음 Flutter 위젯을 구현하세요.
 
-함수 뼈대:
-{problem.function_signature}
-    pass
+요구사항:
+- 위젯 이름: {problem.widget_name}
+- 설명: {problem.description}
+{hint_section}
 
-주의: 함수 구현 코드만 출력하세요. 설명은 불필요합니다.
+구현 규칙:
+1. import 'package:flutter/material.dart'; 를 포함하세요.
+2. StatelessWidget 또는 StatefulWidget을 사용하세요.
+3. 위젯 클래스 이름은 반드시 `{problem.widget_name}`이어야 합니다.
+4. main() 함수는 포함하지 마세요 — 위젯 클래스만 구현하세요.
+5. runApp() 등 앱 실행 코드는 포함하지 마세요.
+6. import 문을 포함한 완전한 코드를 ```dart ... ``` 블록으로 출력하세요.
 """
 
 
-def build_web_prompt(problem: WebProblem) -> str:
-    """
-    Week2: 웹/앱 서비스 평가용 프롬프트.
-    LLM에게 FastAPI 엔드포인트 구현을 요청.
-    ※ 평가 목적에 따라 프롬프트 템플릿 자유롭게 수정.
-    """
-    method = problem.method.upper()
+def build_logic_prompt(problem: FlutterProblem) -> str:
+    """Logic mode: Dart 순수 함수 구현 프롬프트."""
+    hint_section = f"\n코드 힌트:\n{problem.hint}" if problem.hint else ""
 
-    test_lines = []
-    for i, tc in enumerate(problem.test_cases, 1):
-        line = f"  테스트 {i}: {method} {problem.endpoint} → HTTP {tc.expected_status}"
-        if tc.request_body:
-            line += f"  (요청 body: {tc.request_body})"
-        if tc.expected_schema:
-            line += "  (응답 스키마 검증 있음)"
-        test_lines.append(line)
-
-    signature_hint = (
-        f"\n코드 힌트:\n{problem.function_signature}" if problem.function_signature else ""
-    )
-
-    return f"""다음 웹 API 엔드포인트를 {problem.framework.capitalize()}로 구현하세요.
+    return f"""다음 Dart 함수를 구현하세요.
 
 요구사항:
-- 엔드포인트: {method} {problem.endpoint}
+- 함수 이름: {problem.function_name}
 - 설명: {problem.description}
-
-테스트 케이스:
-{chr(10).join(test_lines)}
-{signature_hint}
+{hint_section}
 
 구현 규칙:
-1. FastAPI app 객체를 반드시 `app` 변수에 할당하세요. (예: app = FastAPI())
-2. 엔드포인트 함수만 구현하세요. 서버 실행 코드(uvicorn.run 등)는 포함하지 마세요.
-3. 적절한 HTTP 상태 코드를 반환하세요.
-4. Pydantic 모델로 입력 검증을 구현하세요.
-5. import 문을 포함한 완전한 코드를 ```python ... ``` 블록으로 출력하세요.
+1. 함수 구현 코드만 출력하세요. main() 함수는 포함하지 마세요.
+2. 필요한 import 문이 있으면 포함하세요.
+3. ```dart ... ``` 블록으로 출력하세요.
 """
 
 
@@ -103,7 +87,7 @@ def _call_anthropic(prompt: str, model: str, api_key_env: str) -> str:
     client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
         model=model,
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text
@@ -123,20 +107,20 @@ def _call_openai(prompt: str, model: str, api_key_env: str) -> str:
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=2048,
+        max_tokens=4096,
     )
     return response.choices[0].message.content
 
 
 # ─── 코드 추출 헬퍼 ───────────────────────────────────────────────────────
 
-def _extract_code_block(text: str) -> str:
-    """LLM 응답에서 ```python ... ``` 블록 추출. 없으면 전체 반환."""
+def _extract_dart_block(text: str) -> str:
+    """LLM 응답에서 ```dart ... ``` 블록 추출. 없으면 전체 반환."""
     lines = text.splitlines()
     in_block = False
     code_lines = []
     for line in lines:
-        if line.strip().startswith("```python"):
+        if line.strip().startswith("```dart"):
             in_block = True
             continue
         if in_block and line.strip() == "```":
@@ -148,14 +132,12 @@ def _extract_code_block(text: str) -> str:
 
 # ─── 퍼블릭 인터페이스 ────────────────────────────────────────────────────
 
-def generate_code(problem: Problem, config: dict) -> str:
-    """Week1: DataLoader → LLMClient 인터페이스 (코드 생성)."""
-    prompt = build_code_prompt(problem)
-    return call_llm(prompt, config)
+def generate_flutter_code(problem: FlutterProblem, config: dict) -> str:
+    """FlutterProblem → LLM 호출 → Dart 코드 생성."""
+    if problem.mode == "widget":
+        prompt = build_widget_prompt(problem)
+    else:
+        prompt = build_logic_prompt(problem)
 
-
-def generate_web_code(problem: WebProblem, config: dict) -> str:
-    """Week2: DataLoader → LLMClient 인터페이스 (웹 엔드포인트 생성)."""
-    prompt = build_web_prompt(problem)
     raw = call_llm(prompt, config)
-    return _extract_code_block(raw)
+    return _extract_dart_block(raw)

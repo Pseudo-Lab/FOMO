@@ -1,68 +1,41 @@
 """
-① DataLoader — 파이프라인 1단계
-역할: 문제 데이터(JSONL)를 읽어서 표준 Problem / WebProblem 객체 리스트로 변환
+① DataLoader — Flutter 평가 하네스 1단계
+역할: 문제 데이터(JSONL)를 읽어서 FlutterProblem 객체 리스트로 변환
 
-[week1] Problem       — 코드 생성 평가용 (function_signature + unit_tests)
-[week2] WebProblem    — 웹/앱 서비스 평가용 (endpoint + method + test_cases)
+[widget] FlutterProblem (mode="widget") — Flutter 위젯 테스트 평가
+[logic]  FlutterProblem (mode="logic")  — Dart 순수 로직 테스트 평가
 """
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 
-
-# ─── Week1: 코드 평가용 ──────────────────────────────────────────────────
 
 @dataclass
-class Problem:
+class FlutterProblem:
     """
-    코드 생성 평가용 표준 문제 객체 (week1 호환).
-    ※ SQL 평가라면 'schema' 필드 추가, 파일 처리라면 'input_files' 필드 추가.
+    Flutter/Dart 평가용 표준 문제 객체.
+
+    mode:
+      - "widget" → Flutter 위젯 구현 + testWidgets()로 검증
+      - "logic"  → Dart 순수 함수 구현 + test()로 검증
+
+    test_code:
+      flutter test에 사용할 완전한 Dart 테스트 코드.
+      import 'package:harness_eval/solution.dart'; 포함 필수.
     """
     id: str
     description: str
-    function_signature: str
-    unit_tests: list[str]
+    mode: str                                          # "widget" | "logic"
+    test_code: str                                     # 완전한 Dart 테스트 코드
+    widget_name: str = ""                              # widget mode: 구현할 위젯 이름
+    function_name: str = ""                            # logic mode: 구현할 함수 이름
+    dependencies: list[str] = field(default_factory=list)   # 추가 pubspec 의존성
+    hint: str = ""                                     # 코드 힌트 (선택)
     tags: list[str] = field(default_factory=list)
 
 
-# ─── Week2: 웹/앱 평가용 ─────────────────────────────────────────────────
-
-@dataclass
-class TestCase:
-    """
-    웹 평가용 단일 테스트 케이스.
-    하나의 HTTP 요청 → 예상 응답을 정의.
-    """
-    expected_status: int = 200
-    request_params: dict = field(default_factory=dict)   # query string
-    request_body: dict | None = None                      # JSON body (POST/PUT)
-    request_headers: dict = field(default_factory=dict)   # 요청 헤더
-    expected_schema: dict | None = None                   # JSON Schema 검증 대상
-    expected_response: dict | None = None                 # 완전 일치 검사 (선택)
-
-
-@dataclass
-class WebProblem:
-    """
-    웹/앱 서비스 평가용 표준 문제 객체.
-    ※ REST API 엔드포인트 구현을 평가 대상으로 함.
-    ※ framework 필드로 FastAPI / Flask 분기 가능.
-    """
-    id: str
-    description: str
-    endpoint: str               # 예: "/users/{user_id}"
-    method: str                 # "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
-    framework: str              # "fastapi" | "flask"
-    test_cases: list[TestCase]
-    function_signature: str = ""   # 코드 힌트 (선택)
-    tags: list[str] = field(default_factory=list)
-
-
-# ─── 로더 함수 ────────────────────────────────────────────────────────────
-
-def load_problems(path: str) -> list[Problem]:
-    """JSONL 파일에서 코드 평가 문제 로드 (week1 호환)."""
+def load_flutter_problems(path: str) -> list[FlutterProblem]:
+    """JSONL 파일에서 Flutter 평가 문제 로드."""
     problems = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
@@ -70,22 +43,5 @@ def load_problems(path: str) -> list[Problem]:
             if not line or line.startswith("#"):
                 continue
             data = json.loads(line)
-            problems.append(Problem(**data))
-    return problems
-
-
-def load_web_problems(path: str) -> list[WebProblem]:
-    """
-    JSONL 파일에서 웹/앱 평가 문제 로드.
-    test_cases 배열을 TestCase 객체로 자동 변환.
-    """
-    problems = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            data = json.loads(line)
-            test_cases = [TestCase(**tc) for tc in data.pop("test_cases", [])]
-            problems.append(WebProblem(test_cases=test_cases, **data))
+            problems.append(FlutterProblem(**data))
     return problems
