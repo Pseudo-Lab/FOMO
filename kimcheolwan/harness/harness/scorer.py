@@ -1,101 +1,91 @@
 """
-④ Scorer / Logger — 파이프라인 4단계
+④ Scorer / Logger — Flutter 평가 하네스 4단계
 역할: 실행 결과를 채점하고 JSONL 파일로 저장
 
-[week1] 단일 점수: pass/fail 비율
-[week2] 다차원 점수:
-        - status_score  (기본 0.3): HTTP 상태 코드 일치율
-        - schema_score  (기본 0.4): 응답 JSON Schema 적합도
-        - security_score(기본 0.3): 정적 보안 검사 점수
+다차원 점수:
+  - test_score     (기본 0.4): flutter test 통과율
+  - lint_score     (기본 0.3): dart analyze 정적 분석
+  - security_score (기본 0.3): 보안 정적 검사
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
 
-from harness.sandbox import ExecutionResult, WebExecutionResult
+from harness.sandbox import FlutterExecutionResult
 
 
-# ─── Week1: 코드 채점 ────────────────────────────────────────────────────
+# ─── Flutter 채점 ────────────────────────────────────────────────────────
 
-def score(result: ExecutionResult) -> dict:
-    """ExecutionResult → 점수 딕셔너리 (week1 호환)."""
-    total = result.passed + result.failed
-    score_value = result.passed / total if total > 0 else 0.0
-    return {
-        "passed": result.passed,
-        "failed": result.failed,
-        "total": total,
-        "score": round(score_value, 4),
-        "timed_out": result.timed_out,
-        "errors": result.errors,
-    }
-
-
-# ─── Week2: 웹 채점 ──────────────────────────────────────────────────────
-
-def score_web(
-    exec_result: WebExecutionResult,
+def score_flutter(
+    exec_result: FlutterExecutionResult,
     generated_code: str,
     weights: dict | None = None,
 ) -> dict:
     """
-    웹 실행 결과를 다차원 채점.
+    Flutter 실행 결과를 다차원 채점.
 
-    weights 예시: {"status": 0.3, "schema": 0.4, "security": 0.3}
-    ※ 가중치 합이 1.0이 되도록 설정. 기본값은 위와 동일.
+    weights 예시: {"test": 0.4, "lint": 0.3, "security": 0.3}
     """
     from harness.validators.security import check_security
 
     if weights is None:
-        weights = {"status": 0.3, "schema": 0.4, "security": 0.3}
+        weights = {"test": 0.4, "lint": 0.3, "security": 0.3}
 
-    # 설정/타임아웃 오류 → 0점 처리
-    if exec_result.setup_error or exec_result.timed_out:
+    # 설정/타임아웃/빌드 오류 → 0점 처리
+    if exec_result.setup_error or exec_result.timed_out or exec_result.build_error:
         return {
             "score": 0.0,
-            "status_score": 0.0,
-            "schema_score": 0.0,
+            "test_score": 0.0,
+            "lint_score": 0.0,
             "security_score": 0.0,
             "total_tests": 0,
-            "passed_status": 0,
-            "passed_schema": 0,
+            "passed_tests": 0,
+            "lint_errors": 0,
+            "lint_warnings": 0,
             "timed_out": exec_result.timed_out,
             "setup_error": exec_result.setup_error,
+            "build_error": exec_result.build_error,
             "security_issues": [],
         }
 
-    total = len(exec_result.test_results)
+    # ── test_score: flutter test 통과율 ──
+    total_tests = len(exec_result.test_results)
+    passed_tests = sum(1 for r in exec_result.test_results if r.passed)
+    test_score = passed_tests / total_tests if total_tests > 0 else 0.0
 
-    # 상태 코드 점수
-    passed_status = sum(1 for r in exec_result.test_results if r.status_matched)
-    status_score = passed_status / total if total > 0 else 0.0
+    # ── lint_score: dart analyze 결과 ──
+    lint_errors = sum(1 for i in exec_result.lint_issues if i.severity == "error")
+    lint_warnings = sum(1 for i in exec_result.lint_issues if i.severity == "warning")
+    lint_infos = sum(1 for i in exec_result.lint_issues if i.severity == "info")
 
-    # 스키마 점수
-    passed_schema = sum(1 for r in exec_result.test_results if r.schema_valid)
-    schema_score = passed_schema / total if total > 0 else 0.0
+    # 감점: error -0.3, warning -0.1, info -0.02
+    lint_penalty = (lint_errors * 0.3) + (lint_warnings * 0.1) + (lint_infos * 0.02)
+    lint_score = max(0.0, 1.0 - lint_penalty)
 
-    # 보안 점수 (정적 분석)
+    # ── security_score: 보안 정적 분석 ──
     sec_report = check_security(generated_code)
     security_score = sec_report.score
 
-    # 가중 합산
+    # ── 가중 합산 ──
     total_score = (
-        weights["status"] * status_score
-        + weights["schema"] * schema_score
+        weights["test"] * test_score
+        + weights["lint"] * lint_score
         + weights["security"] * security_score
     )
 
     return {
         "score": round(total_score, 4),
-        "status_score": round(status_score, 4),
-        "schema_score": round(schema_score, 4),
+        "test_score": round(test_score, 4),
+        "lint_score": round(lint_score, 4),
         "security_score": round(security_score, 4),
-        "total_tests": total,
-        "passed_status": passed_status,
-        "passed_schema": passed_schema,
+        "total_tests": total_tests,
+        "passed_tests": passed_tests,
+        "lint_errors": lint_errors,
+        "lint_warnings": lint_warnings,
         "timed_out": exec_result.timed_out,
         "setup_error": None,
+        "build_error": None,
         "security_issues": [
             {
                 "severity": i.severity,
@@ -104,6 +94,15 @@ def score_web(
                 "line": i.line,
             }
             for i in sec_report.issues
+        ],
+        "lint_details": [
+            {
+                "severity": i.severity,
+                "rule": i.rule,
+                "message": i.message,
+                "line": i.line,
+            }
+            for i in exec_result.lint_issues
         ],
     }
 
@@ -128,11 +127,8 @@ def log_result(
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def print_summary(results: list[dict], mode: str = "code") -> None:
-    """
-    전체 실행 후 콘솔 요약 출력.
-    ※ 보리스 팁 13 — 피드백 루프: 파이프라인 종료 시 결과를 즉시 확인 가능하게.
-    """
+def print_summary(results: list[dict]) -> None:
+    """전체 실행 후 콘솔 요약 출력."""
     total = len(results)
     if total == 0:
         print("\n[결과 없음]")
@@ -141,24 +137,31 @@ def print_summary(results: list[dict], mode: str = "code") -> None:
     avg_score = sum(r["score"] for r in results) / total
     perfect = sum(1 for r in results if r["score"] >= 0.99)
 
+    avg_test = sum(r.get("test_score", 0) for r in results) / total
+    avg_lint = sum(r.get("lint_score", 0) for r in results) / total
+    avg_sec = sum(r.get("security_score", 0) for r in results) / total
+
     print("\n" + "=" * 50)
-    print(f"[결과 요약 — {mode} mode] 총 {total}문제")
+    print(f"[결과 요약 — Flutter 하네스] 총 {total}문제")
     print(f"  완벽 통과 (≥99%): {perfect} / {total}")
     print(f"  평균 점수:        {avg_score:.2%}")
+    print(f"  ─ 테스트 점수:    {avg_test:.2%}")
+    print(f"  ─ 린트 점수:      {avg_lint:.2%}")
+    print(f"  ─ 보안 점수:      {avg_sec:.2%}")
 
-    if mode == "web":
-        avg_status = sum(r.get("status_score", 0) for r in results) / total
-        avg_schema = sum(r.get("schema_score", 0) for r in results) / total
-        avg_sec    = sum(r.get("security_score", 0) for r in results) / total
-        print(f"  ─ 상태코드 점수:  {avg_status:.2%}")
-        print(f"  ─ 스키마 점수:    {avg_schema:.2%}")
-        print(f"  ─ 보안 점수:      {avg_sec:.2%}")
+    # HIGH 보안 이슈 경고
+    high_issues = sum(
+        sum(1 for i in r.get("security_issues", []) if i["severity"] == "HIGH")
+        for r in results
+    )
+    if high_issues > 0:
+        print(f"  ⚠ HIGH 보안 이슈: {high_issues}건 — 코드 검토 필요")
 
-        high_issues = sum(
-            sum(1 for i in r.get("security_issues", []) if i["severity"] == "HIGH")
-            for r in results
-        )
-        if high_issues > 0:
-            print(f"  ⚠ HIGH 보안 이슈: {high_issues}건 — 코드 검토 필요")
+    # 빌드/설정 오류 경고
+    error_count = sum(
+        1 for r in results if r.get("setup_error") or r.get("build_error")
+    )
+    if error_count > 0:
+        print(f"  ⚠ 빌드/설정 오류: {error_count}건")
 
     print("=" * 50)

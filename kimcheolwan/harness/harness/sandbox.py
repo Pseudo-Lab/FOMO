@@ -1,242 +1,318 @@
 """
-③ ExecutionSandbox — 파이프라인 3단계
-역할: LLM이 생성한 코드를 안전하게 실행하고 테스트 결과를 반환
+③ ExecutionSandbox — Flutter 평가 하네스 3단계
+역할: LLM이 생성한 Dart 코드를 Flutter 프로젝트로 조립하고 테스트 실행
 
-[week1] CodeSandbox  — exec() + namespace isolation + timeout
-[week2] WebSandbox   — FastAPI TestClient + HTTP 수준 요청/응답 검증
+실행 전략:
+  1. 템플릿 프로젝트를 임시 디렉토리에 복사
+  2. 생성된 코드를 lib/solution.dart에 저장
+  3. 테스트 코드를 test/solution_test.dart에 저장
+  4. flutter pub get → flutter test --machine 실행
+  5. dart analyze 실행
+  6. 결과 파싱 후 임시 디렉토리 정리
 
 [보안 고려사항]
-- 타임아웃: threading.Timer로 무한 루프 방어
-- 네임스페이스 격리 (코드 모드): exec()에 제한된 __builtins__ 전달
-- 예외 흡수: 런타임 에러가 전체 파이프라인을 중단시키지 않도록 처리
+- 타임아웃: subprocess에 timeout 인자로 무한 실행 방어
+- 임시 디렉토리 격리: 원본 프로젝트에 영향 없음
+- 자동 정리: finally 블록에서 임시 디렉토리 삭제
 """
 
-import threading
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass, field
-
-from harness.loader import TestCase
-
-
-# ─── 공통: 타임아웃 래퍼 ─────────────────────────────────────────────────
-
-def run_with_timeout(fn, timeout_sec: int) -> dict:
-    """timeout_sec 초 내에 fn()이 완료되지 않으면 timed_out=True 반환."""
-    result: dict = {"value": None, "timed_out": False}
-
-    def target():
-        result["value"] = fn()
-
-    thread = threading.Thread(target=target, daemon=True)
-    thread.start()
-    thread.join(timeout=timeout_sec)
-
-    if thread.is_alive():
-        result["timed_out"] = True
-
-    return result
+from pathlib import Path
 
 
-# ─── Week1: 코드 실행 결과 ────────────────────────────────────────────────
+# ─── 실행 결과 데이터 클래스 ──────────────────────────────────────────────
 
 @dataclass
-class ExecutionResult:
-    """코드 유닛 테스트 실행 결과."""
-    passed: int
-    failed: int
-    errors: list[str]
-    timed_out: bool = False
-
-
-# ─── Week2: 웹 실행 결과 ──────────────────────────────────────────────────
-
-@dataclass
-class WebTestResult:
-    """단일 HTTP 테스트 케이스 실행 결과."""
-    test_index: int
-    expected_status: int
-    actual_status: int | None
-    status_matched: bool
-    schema_valid: bool
-    response_body: dict | None = None
+class FlutterTestResult:
+    """단일 테스트 케이스 결과."""
+    test_id: int
+    test_name: str
+    passed: bool
     error: str | None = None
 
 
 @dataclass
-class WebExecutionResult:
-    """전체 웹 실행 결과 (n개 테스트 케이스 집합)."""
-    test_results: list[WebTestResult] = field(default_factory=list)
+class LintIssue:
+    """dart analyze 단일 이슈."""
+    severity: str          # "info" | "warning" | "error"
+    message: str
+    file: str
+    line: int
+    rule: str = ""
+
+
+@dataclass
+class FlutterExecutionResult:
+    """전체 실행 결과."""
+    test_results: list[FlutterTestResult] = field(default_factory=list)
+    lint_issues: list[LintIssue] = field(default_factory=list)
     setup_error: str | None = None
+    build_error: str | None = None
     timed_out: bool = False
 
 
-# ─── Week1: 코드 실행 샌드박스 ───────────────────────────────────────────
+# ─── 커맨드 유틸리티 ─────────────────────────────────────────────────────
 
-def execute(
+def _find_command(name: str, sdk_path: str = "") -> str:
+    """Flutter/Dart 커맨드 경로를 찾는다. Windows에서는 .bat 확장자를 고려."""
+    if sdk_path:
+        bin_dir = os.path.join(sdk_path, "bin")
+        if sys.platform == "win32":
+            bat_path = os.path.join(bin_dir, f"{name}.bat")
+            if os.path.exists(bat_path):
+                return bat_path
+        return os.path.join(bin_dir, name)
+
+    found = shutil.which(name)
+    if found:
+        return found
+
+    # Windows: .bat 확장자로 재시도
+    if sys.platform == "win32":
+        found = shutil.which(f"{name}.bat")
+        if found:
+            return found
+
+    return name
+
+
+# ─── 메인 실행 함수 ──────────────────────────────────────────────────────
+
+def execute_flutter(
     generated_code: str,
-    unit_tests: list[str],
-    timeout_sec: int = 5,
-) -> ExecutionResult:
+    test_code: str,
+    template_dir: str,
+    timeout_sec: int = 120,
+    pub_get_timeout_sec: int = 60,
+    sdk_path: str = "",
+    cleanup: bool = True,
+) -> FlutterExecutionResult:
     """
-    생성된 파이썬 코드 + 유닛 테스트를 격리된 네임스페이스에서 실행.
+    Flutter 테스트 실행 파이프라인.
 
-    ※ safe_globals의 __builtins__는 허용 목록 방식 — 위험한 빌트인 차단.
-    ※ 평가 목적에 따라 허용 빌트인 추가 가능 (예: "open": open).
+    1. 템플릿 프로젝트 복사 → 임시 디렉토리
+    2. solution.dart + solution_test.dart 저장
+    3. flutter pub get
+    4. flutter test --machine → 테스트 결과 파싱
+    5. dart analyze → 린트 결과 파싱
+    6. 임시 디렉토리 정리
     """
-    passed = 0
-    failed = 0
-    errors: list[str] = []
+    flutter_cmd = _find_command("flutter", sdk_path)
+    dart_cmd = _find_command("dart", sdk_path)
 
-    safe_globals = {
-        "__builtins__": {
-            "len": len, "range": range, "print": print,
-            "int": int, "str": str, "float": float,
-            "list": list, "dict": dict, "tuple": tuple,
-            "bool": bool, "None": None, "True": True, "False": False,
-            "enumerate": enumerate, "zip": zip, "map": map,
-            "min": min, "max": max, "sum": sum, "sorted": sorted,
-        }
-    }
-    local_ns: dict = {}
-
-    def _run():
-        nonlocal passed, failed, errors
-
-        # 1. 생성된 코드 실행 (함수 정의)
-        try:
-            exec(generated_code, safe_globals, local_ns)
-        except Exception as e:
-            errors.append(f"[코드 실행 오류] {type(e).__name__}: {e}")
-            return
-
-        # 2. 유닛 테스트 순차 실행
-        for test in unit_tests:
-            try:
-                exec(test, safe_globals, local_ns)
-                passed += 1
-            except AssertionError:
-                failed += 1
-                errors.append(f"[실패] {test}")
-            except Exception as e:
-                failed += 1
-                errors.append(f"[에러] {test} → {type(e).__name__}: {e}")
-
-    result = run_with_timeout(_run, timeout_sec)
-    if result["timed_out"]:
-        return ExecutionResult(
-            passed=0, failed=len(unit_tests),
-            errors=["[타임아웃] 실행 시간 초과"], timed_out=True,
+    # Flutter SDK 존재 확인
+    if not shutil.which(flutter_cmd) and not os.path.exists(flutter_cmd):
+        return FlutterExecutionResult(
+            setup_error="[환경 오류] Flutter SDK를 찾을 수 없습니다. "
+                        "PATH에 Flutter를 추가하거나 config.yaml의 flutter.sdk_path를 설정하세요.",
         )
-    return ExecutionResult(passed=passed, failed=failed, errors=errors)
+
+    # 템플릿 프로젝트 존재 확인
+    if not os.path.isdir(template_dir):
+        return FlutterExecutionResult(
+            setup_error=f"[환경 오류] 템플릿 프로젝트가 없습니다: {template_dir}",
+        )
+
+    temp_dir = tempfile.mkdtemp(prefix="harness_flutter_")
+    try:
+        # 1. 프로젝트 복사
+        shutil.copytree(template_dir, temp_dir, dirs_exist_ok=True)
+
+        lib_dir = Path(temp_dir) / "lib"
+        test_dir = Path(temp_dir) / "test"
+        lib_dir.mkdir(exist_ok=True)
+        test_dir.mkdir(exist_ok=True)
+
+        # 2. 코드 저장
+        (lib_dir / "solution.dart").write_text(generated_code, encoding="utf-8")
+        (test_dir / "solution_test.dart").write_text(test_code, encoding="utf-8")
+
+        # .gitkeep 정리
+        for gk in [lib_dir / ".gitkeep", test_dir / ".gitkeep"]:
+            if gk.exists():
+                gk.unlink()
+
+        # 3. flutter pub get
+        pub_result = _run_pub_get(flutter_cmd, temp_dir, pub_get_timeout_sec)
+        if pub_result is not None:
+            return FlutterExecutionResult(setup_error=pub_result)
+
+        # 4. flutter test --machine
+        test_results, timed_out, build_error = _run_flutter_test(
+            flutter_cmd, temp_dir, timeout_sec,
+        )
+        if timed_out:
+            return FlutterExecutionResult(timed_out=True)
+        if build_error:
+            return FlutterExecutionResult(build_error=build_error)
+
+        # 5. dart analyze
+        lint_issues = _run_dart_analyze(dart_cmd, temp_dir)
+
+        return FlutterExecutionResult(
+            test_results=test_results,
+            lint_issues=lint_issues,
+        )
+
+    except Exception as e:
+        return FlutterExecutionResult(
+            setup_error=f"[실행 오류] {type(e).__name__}: {e}",
+        )
+    finally:
+        if cleanup:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-# ─── Week2: 웹 실행 샌드박스 ─────────────────────────────────────────────
+# ─── 내부 실행 함수 ──────────────────────────────────────────────────────
 
-def execute_web(
-    generated_code: str,
-    test_cases: list[TestCase],
-    endpoint: str,
-    method: str,
-    timeout_sec: int = 5,
-) -> WebExecutionResult:
+def _run_pub_get(flutter_cmd: str, project_dir: str, timeout_sec: int) -> str | None:
+    """flutter pub get 실행. 성공 시 None, 실패 시 에러 메시지 반환."""
+    try:
+        result = subprocess.run(
+            [flutter_cmd, "pub", "get"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        if result.returncode != 0:
+            return f"[pub get 실패] {result.stderr.strip()}"
+        return None
+    except subprocess.TimeoutExpired:
+        return "[pub get 타임아웃] flutter pub get 시간 초과"
+    except FileNotFoundError:
+        return f"[환경 오류] 커맨드를 실행할 수 없습니다: {flutter_cmd}"
+
+
+def _run_flutter_test(
+    flutter_cmd: str,
+    project_dir: str,
+    timeout_sec: int,
+) -> tuple[list[FlutterTestResult], bool, str | None]:
     """
-    FastAPI TestClient를 이용해 생성된 웹 코드를 HTTP 수준으로 테스트.
-
-    실행 전략:
-    1. 생성된 코드를 exec()로 실행 → `app` 변수(FastAPI 인스턴스) 추출
-    2. TestClient(app)로 각 test_case를 요청
-    3. 상태 코드 일치 + 응답 JSON Schema 검증
+    flutter test --machine 실행 후 결과 파싱.
+    반환: (test_results, timed_out, build_error)
     """
-    from harness.validators.schema import validate_schema
+    try:
+        result = subprocess.run(
+            [flutter_cmd, "test", "--machine", "--no-pub"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+    except subprocess.TimeoutExpired:
+        return [], True, None
 
-    def _run() -> WebExecutionResult:
-        # 1. 코드 실행 → app 객체 추출
-        namespace: dict = {}
+    # 컴파일 에러 등 빌드 실패 감지
+    if result.returncode != 0 and not result.stdout.strip():
+        return [], False, f"[빌드 오류] {result.stderr.strip()[:500]}"
+
+    return _parse_machine_output(result.stdout), False, None
+
+
+def _parse_machine_output(output: str) -> list[FlutterTestResult]:
+    """flutter test --machine의 JSON 이벤트 스트림을 파싱."""
+    tests: dict[int, str] = {}       # id → name
+    results: list[FlutterTestResult] = []
+
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
         try:
-            exec(generated_code, namespace)
-        except Exception as e:
-            return WebExecutionResult(
-                setup_error=f"[코드 실행 오류] {type(e).__name__}: {e}",
-            )
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
 
-        app = namespace.get("app")
-        if app is None:
-            return WebExecutionResult(
-                setup_error="[설정 오류] 생성된 코드에 `app` 변수가 없습니다. "
-                            "(예: app = FastAPI())",
-            )
+        event_type = event.get("type")
 
-        # 2. TestClient 생성
-        try:
-            from fastapi.testclient import TestClient
-            client = TestClient(app, raise_server_exceptions=False)
-        except ImportError:
-            return WebExecutionResult(
-                setup_error="[환경 오류] fastapi / httpx 패키지가 필요합니다: "
-                            "pip install fastapi httpx",
-            )
+        if event_type == "testStart":
+            test_info = event.get("test", {})
+            tid = test_info.get("id")
+            name = test_info.get("name", "")
+            # hidden 테스트 (loading 등) 건너뛰기
+            if tid is not None and not name.startswith("loading"):
+                tests[tid] = name
 
-        # 3. 테스트 케이스 순차 실행
-        results: list[WebTestResult] = []
-        for i, tc in enumerate(test_cases):
-            try:
-                response = _make_request(client, method, endpoint, tc)
-                actual_status = response.status_code
-                status_matched = actual_status == tc.expected_status
+        elif event_type == "testDone":
+            tid = event.get("testID")
+            if tid in tests:
+                passed = event.get("result") == "success"
+                hidden = event.get("hidden", False)
+                if not hidden:
+                    results.append(FlutterTestResult(
+                        test_id=tid,
+                        test_name=tests[tid],
+                        passed=passed,
+                    ))
 
-                response_body = None
-                schema_valid = True
-                try:
-                    response_body = response.json()
-                    if tc.expected_schema:
-                        schema_valid = validate_schema(response_body, tc.expected_schema)
-                except Exception:
-                    schema_valid = False
+        elif event_type == "error":
+            tid = event.get("testID")
+            if tid in tests:
+                error_msg = event.get("error", "알 수 없는 에러")
+                # 이미 추가된 결과에 에러 메시지 병합
+                for r in results:
+                    if r.test_id == tid:
+                        r.error = error_msg[:300]
+                        break
+                else:
+                    results.append(FlutterTestResult(
+                        test_id=tid,
+                        test_name=tests.get(tid, f"test_{tid}"),
+                        passed=False,
+                        error=error_msg[:300],
+                    ))
 
-                results.append(WebTestResult(
-                    test_index=i,
-                    expected_status=tc.expected_status,
-                    actual_status=actual_status,
-                    status_matched=status_matched,
-                    schema_valid=schema_valid,
-                    response_body=response_body,
-                ))
-            except Exception as e:
-                results.append(WebTestResult(
-                    test_index=i,
-                    expected_status=tc.expected_status,
-                    actual_status=None,
-                    status_matched=False,
-                    schema_valid=False,
-                    error=f"{type(e).__name__}: {e}",
-                ))
+    return results
 
-        return WebExecutionResult(test_results=results)
 
-    timeout_result = run_with_timeout(_run, timeout_sec)
-    if timeout_result["timed_out"]:
-        return WebExecutionResult(timed_out=True)
+def _run_dart_analyze(dart_cmd: str, project_dir: str) -> list[LintIssue]:
+    """
+    dart analyze 실행 후 이슈 파싱.
+    lib/solution.dart에 대한 린트 결과만 수집.
+    """
+    try:
+        result = subprocess.run(
+            [dart_cmd, "analyze", "lib/solution.dart"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
 
-    return timeout_result["value"] or WebExecutionResult(
-        setup_error="알 수 없는 실행 오류",
+    return _parse_analyze_output(result.stdout + "\n" + result.stderr)
+
+
+def _parse_analyze_output(output: str) -> list[LintIssue]:
+    """
+    dart analyze 출력 파싱.
+    형식: '  severity - file:line:col - message - rule_name'
+    """
+    import re
+    issues: list[LintIssue] = []
+
+    pattern = re.compile(
+        r"\s*(info|warning|error)\s*-\s*(.+?):(\d+):\d+\s*-\s*(.+?)\s*-\s*(\S+)"
     )
+    for line in output.splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            severity, filepath, line_no, message, rule = match.groups()
+            issues.append(LintIssue(
+                severity=severity,
+                message=message.strip(),
+                file=filepath,
+                line=int(line_no),
+                rule=rule,
+            ))
 
-
-def _make_request(client, method: str, endpoint: str, tc: TestCase):
-    """TestCase 기반 HTTP 요청 수행."""
-    kwargs: dict = {}
-    if tc.request_params:
-        kwargs["params"] = tc.request_params
-    if tc.request_headers:
-        kwargs["headers"] = tc.request_headers
-    if tc.request_body is not None:
-        kwargs["json"] = tc.request_body
-
-    method_fn = {
-        "GET":    client.get,
-        "POST":   client.post,
-        "PUT":    client.put,
-        "DELETE": client.delete,
-        "PATCH":  client.patch,
-    }.get(method.upper(), client.get)
-
-    return method_fn(endpoint, **kwargs)
+    return issues

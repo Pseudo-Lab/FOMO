@@ -1,0 +1,33 @@
+case_id	item_id	title	forecast_gap_pct	board_deadline_hours	cross_team_dependency	exec_visibility	revenue_impact	expected_rank
+2017Q1_central	HDUV7VJN	Toughzap GTX Plus Pro Won via Central	7	720	4	1	5	1
+2017Q1_central	WS9CXY7E	Conecom GTX Plus Pro Won via Central	7	720	4	1	5	2
+2017Q1_central	EJMX0EIJ	Betatech GTX Plus Pro Won via Central	7	720	4	1	5	3
+2017Q1_central	9X6V79KE	Isdom GTX Plus Pro Won via Central	6	720	4	1	5	4
+2017Q1_east	BGNB966A	Mathtouch GTX Plus Pro Won via East	6	720	5	1	5	1
+2017Q1_east	83XN082U	Ganjaflex GTX Plus Pro Won via East	4	720	5	1	5	2
+2017Q1_east	C54ZXDLT	Xx-zobam MG Advanced Won via East	7	720	4	1	5	3
+2017Q1_east	RWGSCFHR	Gekko & Co GTX Plus Pro Won via East	7	720	4	1	5	4
+2017Q1_west	PV1DISEC	Hottechi GTX Plus Pro Won via West	5	720	5	1	5	1
+2017Q1_west	UXJSIAVS	Y-corporation GTX Plus Pro Won via West	5	720	5	1	5	2
+2017Q1_west	7G7YLGJO	Hatfan GTX Plus Pro Won via West	6	720	4	1	5	3
+2017Q1_west	U4LRR9E9	Nam-zim GTX Plus Pro Won via West	6	720	4	1	5	4
+2017Q2_central	WNMF0OHM	dambase GTX Plus Pro Won via Central	4	12	4	1	5	1
+2017Q2_central	QODSAVWU	Isdom GTXPro Won via Central	6	72	3	1	5	2
+2017Q2_central	MMGWAWBA	Treequote GTX Plus Pro Won via Central	6	720	5	1	5	3
+2017Q2_central	PYEQPW42	Dontechi GTX Plus Pro Won via Central	6	720	5	1	5	4
+2017Q2_east	YYAZ4JBY	Ganjaflex GTXPro Won via East	4	48	4	1	5	1
+2017Q2_east	OFQCCQ6I	Xx-zobam GTX Plus Pro Won via East	7	720	5	1	5	2
+2017Q2_east	72HZ4LDT	Ganjaflex MG Advanced Won via East	6	24	4	1	4	3
+2017Q2_east	65B8HSTW	Gekko & Co GTXPro Won via East	2	24	3	1	5	4
+2017Q2_west	6AALZVSE	Finjob MG Advanced Won via West	7	24	3	1	5	1
+2017Q2_west	AV4ZPXE3	Doncon MG Advanced Won via West	7	48	3	1	5	2
+2017Q2_west	R707GGNA	Y-corporation GTX Plus Pro Won via West	7	720	5	1	5	3
+2017Q2_west	GKL9QV5B	Scotfind GTX Plus Pro Won via West	7	720	5	1	5	4
+2017Q3_central	9KYX5G9K	Domzoom GTX Plus Pro Won via Central	6	12	4	1	5	1
+2017Q3_central	ACOJBA02	Finhigh GTX Plus Pro Won via Central	5	12	4	1	5	2
+2017Q3_central	G1303HIC	Cancity GTXPro Won via Central	3	24	3	1	5	3
+2017Q3_central	G1XX0IB4	Streethex GTX Plus Pro Won via Central	7	96	4	1	5	4
+2017Q3_east	YZJLPVJG	Konex GTX Plus Pro Won via East	5	72	5	1	5	1
+2017Q3_east	PYIQ65W0	Zotware GTXPro Won via East	3	24	4	1	5	2
+2017Q3_east	BLY5FD3N	Iselectrics GTX Plus Pro Won via East	2	12	4	1	5	3
+2017Q3_east	TFQR150O	Iselectrics GTXPro Won via East	3	24	3	1	5	4

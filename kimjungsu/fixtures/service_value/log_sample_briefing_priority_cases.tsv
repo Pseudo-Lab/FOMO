@@ -1,0 +1,4 @@
+case_id	item_id	title	urgency	due_hours	prep_minutes	team_impact	user_visible	expected_rank
+L1	customer_escalation_prep	Prepare customer escalation	4	1	30	4	1	1
+L1	cleanup_inbox	Cleanup inbox	5	48	0	1	0	2
+L1	update_notes	Update notes	2	12	0	2	0	3
